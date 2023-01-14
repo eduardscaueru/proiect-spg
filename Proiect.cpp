@@ -21,6 +21,12 @@ vector<struct GerstnerWave> gerstner_waves;
  *  and the order in which they are called, see `world.cpp`.
  */
 
+float randomFloat(float a, float b) {
+    float random = ((float)rand()) / (float)RAND_MAX;
+    float diff = b - a;
+    float r = random * diff;
+    return a + r;
+}
 
 Proiect::Proiect()
 {
@@ -38,61 +44,74 @@ void Proiect::Init()
     camera->SetPositionAndRotation(glm::vec3(0, 8, 8), glm::quat(glm::vec3(-40 * TO_RADIANS, 0, 0)));
     camera->Update();
 
-    ToggleGroundPlane();
+    //ToggleGroundPlane();
 
     // Create a shader program for surface generation
     {
         Shader* shader = new Shader("SurfaceGeneration");
         shader->AddShader(PATH_JOIN(window->props.selfDir, SOURCE_PATH::M2, "Proiect", "shaders", "VertexShader.glsl"), GL_VERTEX_SHADER);
-        shader->AddShader(PATH_JOIN(window->props.selfDir, SOURCE_PATH::M2, "Proiect", "shaders", "GeometryShader.glsl"), GL_GEOMETRY_SHADER);
+        //shader->AddShader(PATH_JOIN(window->props.selfDir, SOURCE_PATH::M2, "Proiect", "shaders", "GeometryShader.glsl"), GL_GEOMETRY_SHADER);
         shader->AddShader(PATH_JOIN(window->props.selfDir, SOURCE_PATH::M2, "Proiect", "shaders", "FragmentShader.glsl"), GL_FRAGMENT_SHADER);
         shader->CreateAndLink();
         shaders[shader->GetName()] = shader;
     }
 
-    // Parameters related to surface generation
-    no_of_generated_points = 10;            // number of points on a Bezier curve
-    no_of_instances = 50;                    // number of instances (number of curves that contain the surface)
-    max_translate = 8.0f;                   // for the translation surface, it's the distance between the first and the last curve
-    max_rotate = glm::radians(360.0f);      // for the rotation surface, it's the angle between the first and the last curve
-
-    // Define control points
-    control_p0 = glm::vec3(-4.0, -2.5, 1.0);
-    control_p1 = glm::vec3(-2.5, 1.5, 1.0);
-    control_p2 = glm::vec3(-1.5, 3.0, 1.0);
-    control_p3 = glm::vec3(-4.0, 5.5, 1.0);
-
-    // Create a bogus mesh with 2 points (a line)
-    {
-        vector<VertexFormat> vertices
-        {
-            VertexFormat(control_p0, glm::vec3(0, 1, 1)),
-            VertexFormat(control_p3, glm::vec3(0, 1, 0))
-        };
-
-        vector<unsigned int> indices =
-        {
-            0, 1
-        };
-
-        meshes["surface"] = new Mesh("generated initial surface points");
-        meshes["surface"]->InitFromData(vertices, indices);
-        meshes["surface"]->SetDrawMode(GL_LINES);
-    }
-
-    no_gerstner_waves = 9;
+    no_gerstner_waves = 50;
     for (int i = 0; i < no_gerstner_waves; i++) {
         struct GerstnerWave wave = struct GerstnerWave();
-        wave.direction = glm::vec2(1.0f, 0.0f);
-        wave.amplitude = 1.0f;
-        wave.frequency = 0.5f;
-        wave.speed = 1.0f;
-        wave.steepness = 1.0;
+        if (i < 15) {
+            wave.direction = glm::vec2(0.2, -0.8);
+        }
+        else if (i >= 15 && i < 30) {
+            wave.direction = glm::vec2(-1, 1);
+        }
+        else {
+            wave.direction = glm::vec2(1, -1);
+        }
+        wave.amplitude = randomFloat(0.5f, 1.f);
+        wave.frequency = randomFloat(0.f, 1.f);
+        wave.speed = randomFloat(1.f, 3.f);
+        wave.steepness = randomFloat(0.0f, 1.0f);
 
         gerstner_waves.push_back(wave);
     }
     time = 0.0f;
     gerstner_waves_length = 1;
+
+    {
+        vector<VertexFormat> vertices;
+        vector<unsigned int> indices;
+        Mesh* mesh = new Mesh("water");
+        int posX = 0;
+        int posY = 5;
+        int posZ = 0;
+        int index = 0;
+        for (int i = 0; i < 50; i++) {
+            posX = 0;
+            for (int j = 0; j < 50; j++) {
+                vertices.push_back(VertexFormat(glm::vec3(posX, posY, posZ)));
+                vertices.push_back(VertexFormat(glm::vec3(posX + 1, posY, posZ)));
+                vertices.push_back(VertexFormat(glm::vec3(posX, posY, posZ + 1)));
+                vertices.push_back(VertexFormat(glm::vec3(posX + 1, posY, posZ + 1)));
+
+                indices.push_back(index);
+                indices.push_back(index + 1);
+                indices.push_back(index + 2);
+                indices.push_back(index + 1);
+                indices.push_back(index + 3);
+                indices.push_back(index + 2);
+
+                posX++;
+                index += 4;
+            }
+
+            posZ++;
+        }
+        mesh->SetDrawMode(GL_TRIANGLES);
+        mesh->InitFromData(vertices, indices);
+
+        meshes[mesh->GetMeshID()] = mesh;
+    }
 }
 
 
@@ -139,17 +158,23 @@ void Proiect::RenderMeshInstanced(Mesh* mesh, Shader* shader, const glm::mat4& m
 void Proiect::Update(float deltaTimeSeconds)
 {
     ClearScreen(glm::vec3(0.121, 0.168, 0.372));
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-    Shader* shader = shaders["SurfaceGeneration"];
+    auto& mesh = meshes["water"];
+    auto& shader = shaders["SurfaceGeneration"];
+
     shader->Use();
+    GLint loc_model_matrix = glGetUniformLocation(shader->program, "Model");
+    glUniformMatrix4fv(loc_model_matrix, 1, GL_FALSE, glm::value_ptr(glm::mat4(1)));
 
-    // Send uniforms to shaders
-    glUniform3f(glGetUniformLocation(shader->program, "control_p0"), control_p0.x, control_p0.y, control_p0.z);
-    glUniform3f(glGetUniformLocation(shader->program, "control_p1"), control_p1.x, control_p1.y, control_p1.z);
-    glUniform3f(glGetUniformLocation(shader->program, "control_p2"), control_p2.x, control_p2.y, control_p2.z);
-    glUniform3f(glGetUniformLocation(shader->program, "control_p3"), control_p3.x, control_p3.y, control_p3.z);
-    glUniform1i(glGetUniformLocation(shader->program, "no_of_instances"), no_of_instances);
+    // Bind view matrix
+    glm::mat4 viewMatrix = GetSceneCamera()->GetViewMatrix();
+    int loc_view_matrix = glGetUniformLocation(shader->program, "View");
+    glUniformMatrix4fv(loc_view_matrix, 1, GL_FALSE, glm::value_ptr(viewMatrix));
+
+    // Bind projection matrix
+    glm::mat4 projectionMatrix = GetSceneCamera()->GetProjectionMatrix();
+    int loc_projection_matrix = glGetUniformLocation(shader->program, "Projection");
+    glUniformMatrix4fv(loc_projection_matrix, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
 
     for (int i = 0; i < no_gerstner_waves; i++) {
         string s = "gerstner_waves[";
@@ -175,27 +200,17 @@ void Proiect::Update(float deltaTimeSeconds)
     }
     time += deltaTimeSeconds;
     glUniform1f(glGetUniformLocation(shader->program, "time"), time);
-    glUniform1ui(glGetUniformLocation(shader->program, "gerstner_waves_length"), gerstner_waves_length);
+    glUniform1i(glGetUniformLocation(shader->program, "gerstner_waves_length"), gerstner_waves_length);
 
-    // TODO(student): Send to the shaders the number of points that approximate
-    // a curve (no_of_generated_points), as well as the characteristics for
-    // creating the translation/rotation surfaces (max_translate, max_rotate).
-    // NOTE: If you're feeling lost and need a frame of reference while doing
-    // this lab, go to `FrameEnd()` and activate `DrawCoordinateSystem()`.
-    glUniform1i(glGetUniformLocation(shader->program, "no_of_generated_points"), no_of_generated_points);
-
-    Mesh* mesh = meshes["surface"];
-
-    // Draw the object instanced
-    RenderMeshInstanced(mesh, shader, glm::mat4(1), no_of_instances);
+    // Draw the object
+    glBindVertexArray(mesh->GetBuffers()->m_VAO);
+    glDrawElements(mesh->GetDrawMode(), static_cast<int>(mesh->indices.size()), GL_UNSIGNED_INT, (void*)0);
 }
 
 
 void Proiect::FrameEnd()
 {
-#if 0
-    DrawCoordinateSystem();
-#endif
+    //DrawCoordinateSystem();
 }
 
 
