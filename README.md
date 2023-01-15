@@ -1,5 +1,5 @@
 # proiect-spg
-Simple water simulation with Gerstner waves in OpenGL.
+Simple water simulation with Gerstner waves in OpenGL
 
 References:<br />
 https://github.com/CaffeineViking/osgw#the-gerstner-wave-shader <br />
